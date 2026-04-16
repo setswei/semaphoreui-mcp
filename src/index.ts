@@ -2,46 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
-import fs from "fs";
-import path from "path";
 import { z } from "zod";
 import { api, isConfigured } from "./api-client.js";
+import { indexDocs, scoreDocs, extractSnippet, type DocEntry } from "./docs.js";
 
 const DOCS_DIR = process.env.DOCS_DIR || "/docs";
 const PORT = parseInt(process.env.PORT || "3001");
-
-// --- Doc indexing ---
-
-interface DocEntry {
-  path: string;
-  title: string;
-  content: string;
-  contentLower: string;
-  headings: string[];
-}
-
-function indexDocs(dir: string, base = ""): DocEntry[] {
-  const entries: DocEntry[] = [];
-  for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
-    const rel = path.join(base, item.name);
-    const full = path.join(dir, item.name);
-    if (item.isDirectory()) {
-      entries.push(...indexDocs(full, rel));
-    } else if (item.name.endsWith(".md")) {
-      const content = fs.readFileSync(full, "utf-8");
-      const titleMatch = content.match(/^#\s+(.+)/m);
-      const headings = [...content.matchAll(/^#{1,3}\s+(.+)/gm)].map((m) => m[1].toLowerCase());
-      entries.push({
-        path: rel,
-        title: titleMatch?.[1] || item.name.replace(".md", ""),
-        content,
-        contentLower: content.toLowerCase(),
-        headings,
-      });
-    }
-  }
-  return entries;
-}
 
 let docs: DocEntry[] = [];
 try {
@@ -49,41 +15,6 @@ try {
   console.error(`Indexed ${docs.length} docs from ${DOCS_DIR}`);
 } catch (e) {
   console.error(`Failed to index docs: ${e}`);
-}
-
-// --- Search helpers ---
-
-function scoreDocs(query: string) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return docs
-    .map((doc) => {
-      let score = 0;
-      for (const t of terms) {
-        if (doc.title.toLowerCase().includes(t)) score += 10;
-        if (doc.headings.some((h) => h.includes(t))) score += 5;
-        if (doc.path.toLowerCase().includes(t)) score += 3;
-        if (doc.contentLower.includes(t)) score += 1;
-      }
-      return { doc, score };
-    })
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score);
-}
-
-function extractSnippet(content: string, query: string, len = 300): string {
-  const lower = content.toLowerCase();
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  let bestPos = 0;
-  let bestCount = 0;
-  for (let i = 0; i < lower.length - len; i += 50) {
-    const window = lower.substring(i, i + len);
-    const count = terms.filter((t) => window.includes(t)).length;
-    if (count > bestCount) {
-      bestCount = count;
-      bestPos = i;
-    }
-  }
-  return "..." + content.substring(bestPos, bestPos + len).trim() + "...";
 }
 
 // --- MCP Server factory ---
@@ -99,7 +30,7 @@ function createServer(): McpServer {
     "Search Semaphore UI documentation. Returns matching doc titles, paths, and a relevant snippet.",
     { query: z.string().describe("Search query (keywords)") },
     async ({ query }) => {
-      const results = scoreDocs(query).slice(0, 10);
+      const results = scoreDocs(docs, query).slice(0, 10);
       if (!results.length) {
         return { content: [{ type: "text" as const, text: "No results found." }] };
       }
@@ -121,7 +52,7 @@ function createServer(): McpServer {
       max_results: z.number().min(1).max(5).default(3).describe("Number of full docs to return (1-5, default 3)"),
     },
     async ({ query, max_results }) => {
-      const results = scoreDocs(query).slice(0, max_results);
+      const results = scoreDocs(docs, query).slice(0, max_results);
       if (!results.length) {
         return { content: [{ type: "text" as const, text: "No results found." }] };
       }
