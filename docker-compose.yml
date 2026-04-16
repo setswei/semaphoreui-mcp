@@ -1,0 +1,9 @@
+services:
+  semaphore-docs-mcp:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - SEMAPHORE_URL=${SEMAPHORE_URL:-}
+      - SEMAPHORE_API_TOKEN=${SEMAPHORE_API_TOKEN:-}
+    restart: unless-stopped
