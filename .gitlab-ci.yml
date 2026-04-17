@@ -65,9 +65,9 @@ auto-release:
       NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
       echo "Bump: $BUMP → $NEW_TAG"
 
-      # Skip if tag already exists
-      if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
-        echo "Tag $NEW_TAG already exists, skipping"
+      # Skip if tag already exists on remote
+      if git ls-remote --tags origin | grep -q "refs/tags/$NEW_TAG$"; then
+        echo "Tag $NEW_TAG already exists on remote, skipping"
         exit 0
       fi
 
