@@ -155,4 +155,108 @@ describe("API tools", () => {
     mockApi.mockRejectedValue(new Error("GET /projects → 401: Unauthorized"));
     await expect(api("GET", "/projects")).rejects.toThrow("401: Unauthorized");
   });
+
+  // --- CRUD: Projects ---
+  it("create_project calls POST /projects", async () => {
+    mockApi.mockResolvedValue({ id: 2, name: "Test" });
+    const result = await api("POST", "/projects", { name: "Test", alert: false, max_parallel_tasks: 0 });
+    expect(mockApi).toHaveBeenCalledWith("POST", "/projects", { name: "Test", alert: false, max_parallel_tasks: 0 });
+    expect(result).toHaveProperty("id");
+  });
+
+  it("update_project calls PUT /project/:id", async () => {
+    mockApi.mockResolvedValue("");
+    await api("PUT", "/project/1", { name: "Updated" });
+    expect(mockApi).toHaveBeenCalledWith("PUT", "/project/1", { name: "Updated" });
+  });
+
+  it("delete_project calls DELETE /project/:id", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1");
+  });
+
+  // --- CRUD: Templates ---
+  it("create_template calls POST /project/:id/templates", async () => {
+    mockApi.mockResolvedValue({ id: 10, name: "Deploy" });
+    const result = await api("POST", "/project/1/templates", { name: "Deploy", playbook: "deploy.yml", project_id: 1, inventory_id: 1, repository_id: 1, environment_id: 1 });
+    expect(result).toHaveProperty("name", "Deploy");
+  });
+
+  it("update_template calls PUT", async () => {
+    mockApi.mockResolvedValue("");
+    await api("PUT", "/project/1/templates/10", { id: 10, name: "Updated" });
+    expect(mockApi).toHaveBeenCalledWith("PUT", "/project/1/templates/10", { id: 10, name: "Updated" });
+  });
+
+  it("delete_template calls DELETE", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1/templates/10");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/templates/10");
+  });
+
+  // --- CRUD: Environments ---
+  it("create_environment calls POST", async () => {
+    mockApi.mockResolvedValue({ id: 5, name: "staging" });
+    const result = await api("POST", "/project/1/environment", { name: "staging", json: "{}", env: "{}", project_id: 1 });
+    expect(result).toHaveProperty("name", "staging");
+  });
+
+  it("delete_environment calls DELETE", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1/environment/5");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/environment/5");
+  });
+
+  // --- CRUD: Inventory ---
+  it("create_inventory calls POST", async () => {
+    mockApi.mockResolvedValue({ id: 3, name: "test-hosts", type: "static" });
+    const result = await api("POST", "/project/1/inventory", { name: "test-hosts", type: "static", inventory: "localhost", ssh_key_id: 1, project_id: 1 });
+    expect(result).toHaveProperty("type", "static");
+  });
+
+  it("delete_inventory calls DELETE", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1/inventory/3");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/inventory/3");
+  });
+
+  // --- CRUD: Repositories ---
+  it("create_repository calls POST", async () => {
+    mockApi.mockResolvedValue({ id: 4, name: "test-repo", git_url: "https://example.com/repo.git" });
+    const result = await api("POST", "/project/1/repositories", { name: "test-repo", git_url: "https://example.com/repo.git", git_branch: "main", ssh_key_id: 1, project_id: 1 });
+    expect(result).toHaveProperty("git_url");
+  });
+
+  it("delete_repository calls DELETE", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1/repositories/4");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/repositories/4");
+  });
+
+  // --- CRUD: Keys ---
+  it("create_key calls POST", async () => {
+    mockApi.mockResolvedValue({ id: 5, name: "test-key", type: "none" });
+    const result = await api("POST", "/project/1/keys", { name: "test-key", type: "none", project_id: 1 });
+    expect(result).toHaveProperty("type", "none");
+  });
+
+  it("delete_key calls DELETE", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1/keys/5");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/keys/5");
+  });
+
+  // --- CRUD: Schedules ---
+  it("create_schedule calls POST", async () => {
+    mockApi.mockResolvedValue({ id: 2, name: "nightly", cron_format: "0 0 * * *", active: true });
+    const result = await api("POST", "/project/1/schedules", { name: "nightly", cron_format: "0 0 * * *", template_id: 1, active: true, project_id: 1 });
+    expect(result).toHaveProperty("cron_format", "0 0 * * *");
+  });
+
+  it("delete_schedule calls DELETE", async () => {
+    mockApi.mockResolvedValue("");
+    await api("DELETE", "/project/1/schedules/2");
+    expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/schedules/2");
+  });
 });

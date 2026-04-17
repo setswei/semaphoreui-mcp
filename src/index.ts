@@ -107,6 +107,21 @@ function createServer(): McpServer {
 
     server.tool("semaphoreui_api_get_project", "Get a Semaphore project by ID.", { project_id: pid }, ({ project_id }) => call("GET", `/project/${project_id}`));
 
+    server.tool("semaphoreui_api_create_project", "Create a new Semaphore project.", {
+      name: z.string().describe("Project name"),
+      alert: z.boolean().default(false).describe("Enable alerts"),
+      max_parallel_tasks: z.number().int().default(0).describe("Max parallel tasks (0=unlimited)"),
+    }, ({ ...body }) => call("POST", "/projects", body));
+
+    server.tool("semaphoreui_api_update_project", "Update a Semaphore project.", {
+      project_id: pid,
+      name: z.string().describe("Project name"),
+      alert: z.boolean().default(false).describe("Enable alerts"),
+      max_parallel_tasks: z.number().int().default(0).describe("Max parallel tasks (0=unlimited)"),
+    }, ({ project_id, ...body }) => call("PUT", `/project/${project_id}`, body));
+
+    server.tool("semaphoreui_api_delete_project", "Delete a Semaphore project.", { project_id: pid }, ({ project_id }) => call("DELETE", `/project/${project_id}`));
+
     // Templates
     server.tool(
       "semaphoreui_api_list_templates",
@@ -121,6 +136,36 @@ function createServer(): McpServer {
       { project_id: pid, template_id: z.number().int().describe("Template ID") },
       ({ project_id, template_id }) => call("GET", `/project/${project_id}/templates/${template_id}`)
     );
+
+    server.tool("semaphoreui_api_create_template", "Create a task template.", {
+      project_id: pid,
+      name: z.string().describe("Template name"),
+      playbook: z.string().describe("Playbook/script path"),
+      inventory_id: z.number().int().describe("Inventory ID"),
+      repository_id: z.number().int().describe("Repository ID"),
+      environment_id: z.number().int().describe("Environment ID"),
+      app: z.string().default("ansible").describe("App type: ansible, terraform, bash, powershell, python"),
+      arguments: z.string().default("[]").describe("Extra CLI arguments as JSON array"),
+      description: z.string().optional().describe("Template description"),
+      allow_override_args_in_task: z.boolean().default(false).describe("Allow arg override when running"),
+    }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/templates`, { project_id, ...body }));
+
+    server.tool("semaphoreui_api_update_template", "Update a task template.", {
+      project_id: pid,
+      template_id: z.number().int().describe("Template ID"),
+      name: z.string().describe("Template name"),
+      playbook: z.string().describe("Playbook/script path"),
+      inventory_id: z.number().int().describe("Inventory ID"),
+      repository_id: z.number().int().describe("Repository ID"),
+      environment_id: z.number().int().describe("Environment ID"),
+      app: z.string().default("ansible").describe("App type"),
+      arguments: z.string().default("[]").describe("Extra CLI arguments as JSON array"),
+      description: z.string().optional().describe("Template description"),
+    }, ({ project_id, template_id, ...body }) => call("PUT", `/project/${project_id}/templates/${template_id}`, { id: template_id, project_id, ...body }));
+
+    server.tool("semaphoreui_api_delete_template", "Delete a task template.", {
+      project_id: pid, template_id: z.number().int().describe("Template ID"),
+    }, ({ project_id, template_id }) => call("DELETE", `/project/${project_id}/templates/${template_id}`));
 
     // Tasks
     server.tool(
@@ -184,6 +229,29 @@ function createServer(): McpServer {
       ({ project_id }) => call("GET", `/project/${project_id}/inventory?sort=name&order=asc`)
     );
 
+    server.tool("semaphoreui_api_create_inventory", "Create an inventory.", {
+      project_id: pid,
+      name: z.string().describe("Inventory name"),
+      type: z.enum(["static", "static-yaml", "file"]).describe("Inventory type"),
+      inventory: z.string().describe("Inventory content (static) or file path (file type)"),
+      ssh_key_id: z.number().int().describe("SSH key ID for host access"),
+      become_key_id: z.number().int().optional().describe("Sudo/become key ID"),
+    }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/inventory`, { project_id, ...body }));
+
+    server.tool("semaphoreui_api_update_inventory", "Update an inventory.", {
+      project_id: pid,
+      inventory_id: z.number().int().describe("Inventory ID"),
+      name: z.string().describe("Inventory name"),
+      type: z.enum(["static", "static-yaml", "file"]).describe("Inventory type"),
+      inventory: z.string().describe("Inventory content or file path"),
+      ssh_key_id: z.number().int().describe("SSH key ID"),
+      become_key_id: z.number().int().optional().describe("Sudo/become key ID"),
+    }, ({ project_id, inventory_id, ...body }) => call("PUT", `/project/${project_id}/inventory/${inventory_id}`, { id: inventory_id, project_id, ...body }));
+
+    server.tool("semaphoreui_api_delete_inventory", "Delete an inventory.", {
+      project_id: pid, inventory_id: z.number().int().describe("Inventory ID"),
+    }, ({ project_id, inventory_id }) => call("DELETE", `/project/${project_id}/inventory/${inventory_id}`));
+
     // Keys
     server.tool(
       "semaphoreui_api_list_keys",
@@ -191,6 +259,35 @@ function createServer(): McpServer {
       { project_id: pid },
       ({ project_id }) => call("GET", `/project/${project_id}/keys?sort=name&order=asc`)
     );
+
+    server.tool("semaphoreui_api_create_key", "Create an access key.", {
+      project_id: pid,
+      name: z.string().describe("Key name"),
+      type: z.enum(["none", "ssh", "login_password"]).describe("Key type"),
+      login_password: z.object({
+        login: z.string(), password: z.string(),
+      }).optional().describe("Login/password credentials (for login_password type)"),
+      ssh: z.object({
+        login: z.string(), private_key: z.string(), passphrase: z.string().default(""),
+      }).optional().describe("SSH credentials (for ssh type)"),
+    }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/keys`, { project_id, ...body }));
+
+    server.tool("semaphoreui_api_update_key", "Update an access key.", {
+      project_id: pid,
+      key_id: z.number().int().describe("Key ID"),
+      name: z.string().describe("Key name"),
+      type: z.enum(["none", "ssh", "login_password"]).describe("Key type"),
+      login_password: z.object({
+        login: z.string(), password: z.string(),
+      }).optional().describe("Login/password credentials"),
+      ssh: z.object({
+        login: z.string(), private_key: z.string(), passphrase: z.string().default(""),
+      }).optional().describe("SSH credentials"),
+    }, ({ project_id, key_id, ...body }) => call("PUT", `/project/${project_id}/keys/${key_id}`, { id: key_id, project_id, ...body }));
+
+    server.tool("semaphoreui_api_delete_key", "Delete an access key.", {
+      project_id: pid, key_id: z.number().int().describe("Key ID"),
+    }, ({ project_id, key_id }) => call("DELETE", `/project/${project_id}/keys/${key_id}`));
 
     // Repositories
     server.tool(
@@ -200,6 +297,27 @@ function createServer(): McpServer {
       ({ project_id }) => call("GET", `/project/${project_id}/repositories?sort=name&order=asc`)
     );
 
+    server.tool("semaphoreui_api_create_repository", "Create a repository.", {
+      project_id: pid,
+      name: z.string().describe("Repository name"),
+      git_url: z.string().describe("Git URL"),
+      git_branch: z.string().default("main").describe("Git branch"),
+      ssh_key_id: z.number().int().describe("SSH key ID for git auth"),
+    }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/repositories`, { project_id, ...body }));
+
+    server.tool("semaphoreui_api_update_repository", "Update a repository.", {
+      project_id: pid,
+      repository_id: z.number().int().describe("Repository ID"),
+      name: z.string().describe("Repository name"),
+      git_url: z.string().describe("Git URL"),
+      git_branch: z.string().default("main").describe("Git branch"),
+      ssh_key_id: z.number().int().describe("SSH key ID"),
+    }, ({ project_id, repository_id, ...body }) => call("PUT", `/project/${project_id}/repositories/${repository_id}`, { id: repository_id, project_id, ...body }));
+
+    server.tool("semaphoreui_api_delete_repository", "Delete a repository.", {
+      project_id: pid, repository_id: z.number().int().describe("Repository ID"),
+    }, ({ project_id, repository_id }) => call("DELETE", `/project/${project_id}/repositories/${repository_id}`));
+
     // Environments (Variable Groups)
     server.tool(
       "semaphoreui_api_list_environments",
@@ -208,6 +326,25 @@ function createServer(): McpServer {
       ({ project_id }) => call("GET", `/project/${project_id}/environment?sort=name&order=desc`)
     );
 
+    server.tool("semaphoreui_api_create_environment", "Create a variable group (environment).", {
+      project_id: pid,
+      name: z.string().describe("Environment name"),
+      json: z.string().default("{}").describe("Variables as JSON string"),
+      env: z.string().default("{}").describe("Environment variables as JSON string"),
+    }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/environment`, { project_id, ...body }));
+
+    server.tool("semaphoreui_api_update_environment", "Update a variable group (environment).", {
+      project_id: pid,
+      environment_id: z.number().int().describe("Environment ID"),
+      name: z.string().describe("Environment name"),
+      json: z.string().default("{}").describe("Variables as JSON string"),
+      env: z.string().default("{}").describe("Environment variables as JSON string"),
+    }, ({ project_id, environment_id, ...body }) => call("PUT", `/project/${project_id}/environment/${environment_id}`, { id: environment_id, project_id, ...body }));
+
+    server.tool("semaphoreui_api_delete_environment", "Delete a variable group (environment).", {
+      project_id: pid, environment_id: z.number().int().describe("Environment ID"),
+    }, ({ project_id, environment_id }) => call("DELETE", `/project/${project_id}/environment/${environment_id}`));
+
     // Schedules
     server.tool(
       "semaphoreui_api_list_schedules",
@@ -215,6 +352,27 @@ function createServer(): McpServer {
       { project_id: pid },
       ({ project_id }) => call("GET", `/project/${project_id}/schedules`)
     );
+
+    server.tool("semaphoreui_api_create_schedule", "Create a schedule.", {
+      project_id: pid,
+      template_id: z.number().int().describe("Template ID to schedule"),
+      name: z.string().describe("Schedule name"),
+      cron_format: z.string().describe("Cron expression (e.g. '0 14 * * *')"),
+      active: z.boolean().default(true).describe("Enable schedule"),
+    }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/schedules`, { project_id, ...body }));
+
+    server.tool("semaphoreui_api_update_schedule", "Update a schedule.", {
+      project_id: pid,
+      schedule_id: z.number().int().describe("Schedule ID"),
+      template_id: z.number().int().describe("Template ID"),
+      name: z.string().describe("Schedule name"),
+      cron_format: z.string().describe("Cron expression"),
+      active: z.boolean().default(true).describe("Enable schedule"),
+    }, ({ project_id, schedule_id, ...body }) => call("PUT", `/project/${project_id}/schedules/${schedule_id}`, { id: schedule_id, project_id, ...body }));
+
+    server.tool("semaphoreui_api_delete_schedule", "Delete a schedule.", {
+      project_id: pid, schedule_id: z.number().int().describe("Schedule ID"),
+    }, ({ project_id, schedule_id }) => call("DELETE", `/project/${project_id}/schedules/${schedule_id}`));
 
     logger.info("API tools enabled (SEMAPHORE_API_TOKEN configured)");
   } else {
