@@ -33,8 +33,8 @@ e2e:
       # Create network
       docker network create e2e-net
 
-      # Start Semaphore
-      docker run -d --name semaphore --network e2e-net \
+      # Start Semaphore with published port
+      docker run -d --name semaphore --network e2e-net -p 3000:3000 \
         -e SEMAPHORE_DB_DIALECT=bolt \
         -e SEMAPHORE_ADMIN_PASSWORD=changeme123 \
         -e SEMAPHORE_ADMIN_NAME=admin \
@@ -43,8 +43,10 @@ e2e:
         semaphoreui/semaphore:latest
 
       # Wait for Semaphore
+      SEMAPHORE_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' semaphore)
+      echo "Semaphore IP: $SEMAPHORE_IP"
       for i in $(seq 1 60); do
-        if docker exec semaphore wget -q --spider http://localhost:3000/api/ping 2>/dev/null; then
+        if wget -q --spider http://$SEMAPHORE_IP:3000/api/ping 2>/dev/null; then
           echo "Semaphore ready"
           break
         fi
@@ -52,18 +54,16 @@ e2e:
         sleep 3
       done
 
-      # Generate API token via exec
-      COOKIE_FILE=/tmp/cookie
-      docker exec semaphore wget -q -O /dev/null \
-        --save-cookies $COOKIE_FILE \
+      # Generate API token
+      COOKIE_FILE=$(mktemp)
+      wget -q -O /dev/null --save-cookies $COOKIE_FILE \
         --post-data='{"auth":"admin","password":"changeme123"}' \
         --header='Content-Type: application/json' \
-        http://localhost:3000/api/auth/login
-      TOKEN=$(docker exec semaphore wget -q -O- \
-        --load-cookies $COOKIE_FILE \
+        http://$SEMAPHORE_IP:3000/api/auth/login
+      TOKEN=$(wget -q -O- --load-cookies $COOKIE_FILE \
         --post-data='' \
         --header='Content-Type: application/json' \
-        http://localhost:3000/api/user/tokens | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+        http://$SEMAPHORE_IP:3000/api/user/tokens | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
       echo "Token: ${TOKEN:0:8}..."
 
       # Start MCP server
@@ -75,11 +75,9 @@ e2e:
         mcp-e2e node dist/index.js --http
       sleep 3
 
-      # Run E2E tests against MCP via the Docker network
-      # Connect this CI container to the e2e network
-      SELF_CONTAINER=$(cat /etc/hostname)
-      docker network connect e2e-net $SELF_CONTAINER
-      export MCP_URL=http://mcp-e2e:3001
+      # Run E2E tests
+      MCP_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' mcp-e2e)
+      export MCP_URL=http://$MCP_IP:3001
       npx vitest run tests/e2e/ --reporter=verbose
   after_script:
     - docker rm -f semaphore mcp-e2e 2>/dev/null || true
