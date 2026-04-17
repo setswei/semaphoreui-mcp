@@ -170,7 +170,10 @@ function createServer(): McpServer {
         task_id: z.number().int().describe("Task ID"),
         force: z.boolean().default(false).describe("Force kill immediately"),
       },
-      ({ project_id, task_id, force }) => call("POST", `/project/${project_id}/tasks/${task_id}/stop`, { force })
+      ({ project_id, task_id, force }) => {
+        return call("POST", `/project/${project_id}/tasks/${task_id}/stop`, { force })
+          .then(() => call("GET", `/project/${project_id}/tasks/${task_id}`));
+      }
     );
 
     // Inventory
