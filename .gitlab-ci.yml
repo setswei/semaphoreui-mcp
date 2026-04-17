@@ -1,8 +1,8 @@
 stages:
   - test
-  - release
   - build
 
+# --- Unit tests ---
 test:
   stage: test
   image: node:22-alpine
@@ -12,21 +12,25 @@ test:
     - npx vitest run --exclude tests/e2e/ --reporter=verbose
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /^chore\(release\)/
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-auto-release:
-  stage: release
-  image: node:22-alpine
+# --- Build, tag, and push to both registries in one job ---
+build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
   needs: [test]
+  variables:
+    DOCKERHUB_IMAGE: setswei/semaphoreui-mcp
   before_script:
     - apk add --no-cache git
-    - git config user.name "CI Bot"
-    - git config user.email "ci@gitlab.cybercrysis.net.au"
-    - git remote set-url origin "https://oauth2:${CI_RELEASE_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
-    - git fetch --tags
+    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN" docker.io
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     - |
+      # Determine version from conventional commits
+      git fetch --tags
       LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
       echo "Last tag: $LAST_TAG"
 
@@ -43,92 +47,60 @@ auto-release:
         BUMP="patch"
       fi
 
-      if [ "$BUMP" = "none" ]; then
-        echo "No version bump needed (no feat/fix commits)"
-        exit 0
-      fi
-
       VERSION=${LAST_TAG#v}
       MAJOR=$(echo $VERSION | cut -d. -f1)
       MINOR=$(echo $VERSION | cut -d. -f2)
       PATCH=$(echo $VERSION | cut -d. -f3)
 
-      case $BUMP in
-        major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-        minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-        patch) PATCH=$((PATCH + 1)) ;;
-      esac
-
-      NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
-      echo "Bump: $BUMP → $NEW_TAG"
-
-      if git ls-remote --tags origin | grep -q "refs/tags/$NEW_TAG$"; then
-        echo "Tag $NEW_TAG already exists on remote, skipping"
-        exit 0
+      if [ "$BUMP" != "none" ]; then
+        case $BUMP in
+          major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+          minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+          patch) PATCH=$((PATCH + 1)) ;;
+        esac
       fi
 
-      sed -i "s/\"version\": \".*\"/\"version\": \"${MAJOR}.${MINOR}.${PATCH}\"/" package.json
-      git add package.json
-      git commit -m "chore(release): ${NEW_TAG}"
-      git tag -f "$NEW_TAG"
-      git push origin HEAD:main
-      git push origin "$NEW_TAG"
+      NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+      NEW_TAG="v${NEW_VERSION}"
+      echo "Version: $NEW_VERSION (bump: $BUMP)"
+
+      # Build with all tags
+      docker build \
+        -t $CI_REGISTRY_IMAGE:latest \
+        -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA \
+        -t $CI_REGISTRY_IMAGE:$NEW_VERSION \
+        -t $CI_REGISTRY_IMAGE:${MAJOR}.${MINOR} \
+        -t $CI_REGISTRY_IMAGE:${MAJOR} \
+        -t $DOCKERHUB_IMAGE:latest \
+        -t $DOCKERHUB_IMAGE:$NEW_VERSION \
+        -t $DOCKERHUB_IMAGE:${MAJOR}.${MINOR} \
+        -t $DOCKERHUB_IMAGE:${MAJOR} .
+
+      # Push to GitLab registry
+      docker push $CI_REGISTRY_IMAGE:latest
+      docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+      docker push $CI_REGISTRY_IMAGE:$NEW_VERSION
+      docker push $CI_REGISTRY_IMAGE:${MAJOR}.${MINOR}
+      docker push $CI_REGISTRY_IMAGE:${MAJOR}
+
+      # Push to Docker Hub
+      docker push $DOCKERHUB_IMAGE:latest
+      docker push $DOCKERHUB_IMAGE:$NEW_VERSION
+      docker push $DOCKERHUB_IMAGE:${MAJOR}.${MINOR}
+      docker push $DOCKERHUB_IMAGE:${MAJOR}
+
+      # Create git tag (no commit, no second pipeline)
+      if [ "$BUMP" != "none" ]; then
+        if ! git ls-remote --tags origin | grep -q "refs/tags/$NEW_TAG$"; then
+          git remote set-url origin "https://oauth2:${CI_RELEASE_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+          git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+          git push origin "$NEW_TAG"
+          echo "Tagged $NEW_TAG"
+        else
+          echo "Tag $NEW_TAG already exists, skipping"
+        fi
+      else
+        echo "No version bump, skipping tag"
+      fi
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /^chore\(release\)/
-
-build-latest:
-  stage: build
-  image: docker:27
-  services:
-    - docker:27-dind
-  needs: [test, auto-release]
-  variables:
-    DOCKERHUB_IMAGE: setswei/semaphoreui-mcp
-  before_script:
-    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN" docker.io
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-  script:
-    - docker build
-        -t $CI_REGISTRY_IMAGE:latest
-        -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-        -t $DOCKERHUB_IMAGE:latest .
-    - docker push $CI_REGISTRY_IMAGE:latest
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-    - docker push $DOCKERHUB_IMAGE:latest
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /^chore\(release\)/
-
-build-release:
-  stage: build
-  image: docker:27
-  services:
-    - docker:27-dind
-  needs: [test]
-  variables:
-    DOCKERHUB_IMAGE: setswei/semaphoreui-mcp
-  before_script:
-    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN" docker.io
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-  script:
-    - VERSION=${CI_COMMIT_TAG#v}
-    - MAJOR=$(echo $VERSION | cut -d. -f1)
-    - MINOR=$(echo $VERSION | cut -d. -f1-2)
-    - docker build
-        -t $CI_REGISTRY_IMAGE:$VERSION
-        -t $CI_REGISTRY_IMAGE:$MINOR
-        -t $CI_REGISTRY_IMAGE:$MAJOR
-        -t $CI_REGISTRY_IMAGE:latest
-        -t $DOCKERHUB_IMAGE:$VERSION
-        -t $DOCKERHUB_IMAGE:$MINOR
-        -t $DOCKERHUB_IMAGE:$MAJOR
-        -t $DOCKERHUB_IMAGE:latest .
-    - docker push $CI_REGISTRY_IMAGE:$VERSION
-    - docker push $CI_REGISTRY_IMAGE:$MINOR
-    - docker push $CI_REGISTRY_IMAGE:$MAJOR
-    - docker push $CI_REGISTRY_IMAGE:latest
-    - docker push $DOCKERHUB_IMAGE:$VERSION
-    - docker push $DOCKERHUB_IMAGE:$MINOR
-    - docker push $DOCKERHUB_IMAGE:$MAJOR
-    - docker push $DOCKERHUB_IMAGE:latest
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
