@@ -221,6 +221,94 @@ function createServer(): McpServer {
       }
     );
 
+    server.tool(
+      "semaphoreui_api_get_task_raw_output",
+      "Get the raw text output/logs of a task.",
+      { project_id: pid, task_id: z.number().int().describe("Task ID") },
+      ({ project_id, task_id }) => call("GET", `/project/${project_id}/tasks/${task_id}/raw_output`)
+    );
+
+    server.tool(
+      "semaphoreui_api_filter_tasks",
+      "Get tasks for a project filtered by status and/or template.",
+      {
+        project_id: pid,
+        status: z.enum(["success", "error", "stopped", "running", "waiting"]).optional().describe("Filter by status"),
+        template_id: z.number().int().optional().describe("Filter by template ID"),
+        limit: z.number().int().default(20).describe("Max results to return"),
+      },
+      async ({ project_id, status, template_id, limit }) => {
+        try {
+          const tasks = await api("GET", `/project/${project_id}/tasks/last`) as any[];
+          const filtered = tasks.filter((t: any) =>
+            (!status || t.status === status) &&
+            (!template_id || t.template_id === template_id)
+          ).slice(0, limit);
+          return { content: [{ type: "text" as const, text: JSON.stringify(filtered, null, 2) }] };
+        } catch (e: any) {
+          return { content: [{ type: "text" as const, text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
+    server.tool(
+      "semaphoreui_api_get_latest_failed_task",
+      "Get the most recent failed task in a project.",
+      { project_id: pid },
+      async ({ project_id }) => {
+        try {
+          const tasks = await api("GET", `/project/${project_id}/tasks/last`) as any[];
+          const failed = tasks.find((t: any) => t.status === "error");
+          if (!failed) return { content: [{ type: "text" as const, text: "No failed tasks found." }] };
+          return { content: [{ type: "text" as const, text: JSON.stringify(failed, null, 2) }] };
+        } catch (e: any) {
+          return { content: [{ type: "text" as const, text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
+    server.tool(
+      "semaphoreui_api_analyze_task_failure",
+      "Get a failed task's details and raw output together for analysis.",
+      { project_id: pid, task_id: z.number().int().describe("Task ID") },
+      async ({ project_id, task_id }) => {
+        try {
+          const [task, output] = await Promise.all([
+            api("GET", `/project/${project_id}/tasks/${task_id}`),
+            api("GET", `/project/${project_id}/tasks/${task_id}/raw_output`),
+          ]);
+          return { content: [{ type: "text" as const, text: JSON.stringify({ task, output }, null, 2) }] };
+        } catch (e: any) {
+          return { content: [{ type: "text" as const, text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
+    server.tool(
+      "semaphoreui_api_bulk_stop_tasks",
+      "Stop all active tasks for a template.",
+      {
+        project_id: pid,
+        template_id: z.number().int().describe("Template ID"),
+        force: z.boolean().default(false).describe("Force kill immediately"),
+      },
+      async ({ project_id, template_id, force }) => {
+        try {
+          const tasks = await api("GET", `/project/${project_id}/tasks/last`) as any[];
+          const active = tasks.filter((t: any) =>
+            t.template_id === template_id && ["running", "waiting"].includes(t.status)
+          );
+          if (!active.length) return { content: [{ type: "text" as const, text: "No active tasks found for this template." }] };
+          await Promise.all(active.map((t: any) =>
+            api("POST", `/project/${project_id}/tasks/${t.id}/stop`, { force })
+          ));
+          return { content: [{ type: "text" as const, text: `Stopped ${active.length} task(s): ${active.map((t: any) => t.id).join(", ")}` }] };
+        } catch (e: any) {
+          return { content: [{ type: "text" as const, text: `Error: ${e.message}` }], isError: true };
+        }
+      }
+    );
+
     // Inventory
     server.tool(
       "semaphoreui_api_list_inventory",

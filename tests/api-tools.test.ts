@@ -259,4 +259,74 @@ describe("API tools", () => {
     await api("DELETE", "/project/1/schedules/2");
     expect(mockApi).toHaveBeenCalledWith("DELETE", "/project/1/schedules/2");
   });
+
+  // --- Task Analysis Tools ---
+  it("get_task_raw_output returns raw text", async () => {
+    mockApi.mockResolvedValue("PLAY [all] ***\nok: [localhost]\nPLAY RECAP ***");
+    const result = await api("GET", "/project/1/tasks/1155/raw_output");
+    expect(result).toContain("PLAY RECAP");
+  });
+
+  it("filter_tasks filters by status", async () => {
+    const allTasks = [
+      { id: 1, status: "success", template_id: 38 },
+      { id: 2, status: "error", template_id: 38 },
+      { id: 3, status: "success", template_id: 71 },
+      { id: 4, status: "error", template_id: 71 },
+    ];
+    mockApi.mockResolvedValue(allTasks);
+    const result = await api("GET", "/project/1/tasks/last") as any[];
+    const filtered = result.filter(t => t.status === "error");
+    expect(filtered).toHaveLength(2);
+    expect(filtered.every(t => t.status === "error")).toBe(true);
+  });
+
+  it("filter_tasks filters by template_id", async () => {
+    const allTasks = [
+      { id: 1, status: "success", template_id: 38 },
+      { id: 2, status: "error", template_id: 71 },
+    ];
+    mockApi.mockResolvedValue(allTasks);
+    const result = await api("GET", "/project/1/tasks/last") as any[];
+    const filtered = result.filter(t => t.template_id === 38);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].id).toBe(1);
+  });
+
+  it("get_latest_failed_task finds first error", async () => {
+    const tasks = [
+      { id: 3, status: "success" },
+      { id: 2, status: "error", tpl_alias: "Patching" },
+      { id: 1, status: "error", tpl_alias: "Backup" },
+    ];
+    mockApi.mockResolvedValue(tasks);
+    const result = await api("GET", "/project/1/tasks/last") as any[];
+    const failed = result.find(t => t.status === "error");
+    expect(failed).toBeDefined();
+    expect(failed!.id).toBe(2);
+  });
+
+  it("analyze_task_failure fetches task and output together", async () => {
+    mockApi
+      .mockResolvedValueOnce({ id: 2, status: "error" })
+      .mockResolvedValueOnce("TASK [fail] ***\nfatal: connection refused");
+    const task = await api("GET", "/project/1/tasks/2");
+    const output = await api("GET", "/project/1/tasks/2/raw_output");
+    expect(task).toHaveProperty("status", "error");
+    expect(output).toContain("fatal");
+  });
+
+  it("bulk_stop_tasks stops active tasks for a template", async () => {
+    const tasks = [
+      { id: 10, status: "running", template_id: 38 },
+      { id: 11, status: "waiting", template_id: 38 },
+      { id: 12, status: "success", template_id: 38 },
+      { id: 13, status: "running", template_id: 71 },
+    ];
+    mockApi.mockResolvedValue(tasks);
+    const result = await api("GET", "/project/1/tasks/last") as any[];
+    const active = result.filter(t => t.template_id === 38 && ["running", "waiting"].includes(t.status));
+    expect(active).toHaveLength(2);
+    expect(active.map(t => t.id)).toEqual([10, 11]);
+  });
 });
