@@ -70,7 +70,7 @@ auto-release:
       git add package.json
       git commit -m "chore: release ${NEW_TAG} [skip ci]"
       git tag "$NEW_TAG"
-      git push origin main --tags
+      git push origin HEAD:main --tags
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /\[skip ci\]/
 
