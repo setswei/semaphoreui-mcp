@@ -22,10 +22,62 @@ e2e:
   services:
     - docker:27-dind
   needs: [test]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   before_script:
-    - apk add --no-cache bash curl python3 nodejs npm docker-compose
+    - apk add --no-cache bash curl python3 nodejs npm
+    - npm ci
   script:
-    - bash scripts/run-e2e.sh
+    - |
+      # Build MCP image
+      docker build -t mcp-e2e .
+
+      # Start Semaphore
+      docker network create e2e-net
+      docker run -d --name semaphore --network e2e-net \
+        -e SEMAPHORE_DB_DIALECT=bolt \
+        -e SEMAPHORE_ADMIN_PASSWORD=changeme123 \
+        -e SEMAPHORE_ADMIN_NAME=admin \
+        -e SEMAPHORE_ADMIN_EMAIL=admin@test.local \
+        -e SEMAPHORE_ADMIN=admin \
+        semaphoreui/semaphore:latest
+
+      # Wait for Semaphore
+      for i in $(seq 1 60); do
+        if docker exec semaphore wget -q --spider http://localhost:3000/api/ping 2>/dev/null; then
+          echo "Semaphore ready"
+          break
+        fi
+        [ "$i" -eq 60 ] && echo "Semaphore failed to start" && exit 1
+        sleep 3
+      done
+
+      # Generate API token
+      COOKIE=$(mktemp)
+      docker exec semaphore wget -q -O- --post-data='{"auth":"admin","password":"changeme123"}' \
+        --header='Content-Type: application/json' --save-cookies="$COOKIE" \
+        http://localhost:3000/api/auth/login || true
+      TOKEN=$(docker exec semaphore wget -q -O- --load-cookies="$COOKIE" --post-data='' \
+        --header='Content-Type: application/json' \
+        http://localhost:3000/api/user/tokens 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+      echo "Token: ${TOKEN:0:8}..."
+
+      # Start MCP server
+      docker run -d --name mcp --network e2e-net \
+        -e SEMAPHORE_URL=http://semaphore:3000 \
+        -e SEMAPHORE_API_TOKEN=$TOKEN \
+        -e MCP_LOG_LEVEL=debug \
+        -p 3001:3001 \
+        mcp-e2e node dist/index.js --http
+      sleep 3
+
+      # Run E2E tests
+      export MCP_URL=http://docker:3001
+      npx vitest run tests/e2e/ --reporter=verbose
+  after_script:
+    - docker rm -f semaphore mcp 2>/dev/null
+    - docker network rm e2e-net 2>/dev/null
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /^chore\(release\)/
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
