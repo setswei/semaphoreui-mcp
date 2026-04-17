@@ -79,7 +79,7 @@ build-latest:
   image: docker:27
   services:
     - docker:27-dind
-  needs: [test]
+  needs: [test, auto-release]
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
