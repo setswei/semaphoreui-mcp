@@ -1,0 +1,29 @@
+services:
+  semaphore:
+    image: semaphoreui/semaphore:latest
+    environment:
+      SEMAPHORE_DB_DIALECT: bolt
+      SEMAPHORE_ADMIN_PASSWORD: changeme123
+      SEMAPHORE_ADMIN_NAME: admin
+      SEMAPHORE_ADMIN_EMAIL: admin@test.local
+      SEMAPHORE_ADMIN: admin
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  mcp:
+    build: .
+    command: ["node", "dist/index.js", "--http"]
+    environment:
+      - SEMAPHORE_URL=http://semaphore:3000
+      - SEMAPHORE_API_TOKEN=${SEMAPHORE_API_TOKEN:-}
+      - MCP_LOG_LEVEL=debug
+    ports:
+      - "3001:3001"
+    depends_on:
+      semaphore:
+        condition: service_healthy
