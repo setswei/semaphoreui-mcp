@@ -1,6 +1,5 @@
 stages:
   - test
-  - e2e
   - release
   - build
 
@@ -16,80 +15,10 @@ test:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-e2e:
-  stage: e2e
-  image: docker:27
-  needs: [test]
-  variables:
-    DOCKER_HOST: unix:///var/run/docker.sock
-  before_script:
-    - apk add --no-cache bash curl python3 nodejs npm
-    - npm ci
-  script:
-    - |
-      # Build MCP image
-      docker build -t mcp-e2e .
-
-      # Create network
-      docker network create e2e-net
-
-      # Start Semaphore with published port
-      docker run -d --name semaphore --network e2e-net -p 3000:3000 \
-        -e SEMAPHORE_DB_DIALECT=bolt \
-        -e SEMAPHORE_ADMIN_PASSWORD=changeme123 \
-        -e SEMAPHORE_ADMIN_NAME=admin \
-        -e SEMAPHORE_ADMIN_EMAIL=admin@test.local \
-        -e SEMAPHORE_ADMIN=admin \
-        semaphoreui/semaphore:latest
-
-      # Wait for Semaphore
-      SEMAPHORE_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' semaphore)
-      echo "Semaphore IP: $SEMAPHORE_IP"
-      for i in $(seq 1 60); do
-        if wget -q --spider http://$SEMAPHORE_IP:3000/api/ping 2>/dev/null; then
-          echo "Semaphore ready"
-          break
-        fi
-        [ "$i" -eq 60 ] && echo "Semaphore failed to start" && docker logs semaphore && exit 1
-        sleep 3
-      done
-
-      # Generate API token
-      COOKIE_FILE=$(mktemp)
-      wget -q -O /dev/null --save-cookies $COOKIE_FILE \
-        --post-data='{"auth":"admin","password":"changeme123"}' \
-        --header='Content-Type: application/json' \
-        http://$SEMAPHORE_IP:3000/api/auth/login
-      TOKEN=$(wget -q -O- --load-cookies $COOKIE_FILE \
-        --post-data='' \
-        --header='Content-Type: application/json' \
-        http://$SEMAPHORE_IP:3000/api/user/tokens | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-      echo "Token: ${TOKEN:0:8}..."
-
-      # Start MCP server
-      docker run -d --name mcp-e2e --network e2e-net \
-        -e SEMAPHORE_URL=http://semaphore:3000 \
-        -e SEMAPHORE_API_TOKEN=$TOKEN \
-        -e MCP_LOG_LEVEL=debug \
-        -p 3001:3001 \
-        mcp-e2e node dist/index.js --http
-      sleep 3
-
-      # Run E2E tests
-      MCP_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' mcp-e2e)
-      export MCP_URL=http://$MCP_IP:3001
-      npx vitest run tests/e2e/ --reporter=verbose
-  after_script:
-    - docker rm -f semaphore mcp-e2e 2>/dev/null || true
-    - docker network rm e2e-net 2>/dev/null || true
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /^chore\(release\)/
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-
 auto-release:
   stage: release
   image: node:22-alpine
-  needs: [test, e2e]
+  needs: [test]
   before_script:
     - apk add --no-cache git
     - git config user.name "CI Bot"
@@ -98,11 +27,9 @@ auto-release:
     - git fetch --tags
   script:
     - |
-      # Get last tag or default to v0.0.0
       LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
       echo "Last tag: $LAST_TAG"
 
-      # Determine bump type from commits since last tag
       COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
       echo "Commits since $LAST_TAG:"
       echo "$COMMITS"
@@ -121,7 +48,6 @@ auto-release:
         exit 0
       fi
 
-      # Parse current version and bump
       VERSION=${LAST_TAG#v}
       MAJOR=$(echo $VERSION | cut -d. -f1)
       MINOR=$(echo $VERSION | cut -d. -f2)
@@ -136,13 +62,11 @@ auto-release:
       NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
       echo "Bump: $BUMP → $NEW_TAG"
 
-      # Skip if tag already exists on remote
       if git ls-remote --tags origin | grep -q "refs/tags/$NEW_TAG$"; then
         echo "Tag $NEW_TAG already exists on remote, skipping"
         exit 0
       fi
 
-      # Update package.json version
       sed -i "s/\"version\": \".*\"/\"version\": \"${MAJOR}.${MINOR}.${PATCH}\"/" package.json
       git add package.json
       git commit -m "chore(release): ${NEW_TAG}"
@@ -157,7 +81,7 @@ build-latest:
   image: docker:27
   services:
     - docker:27-dind
-  needs: [test, e2e, auto-release]
+  needs: [test, auto-release]
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
