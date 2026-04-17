@@ -65,6 +65,12 @@ auto-release:
       NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
       echo "Bump: $BUMP → $NEW_TAG"
 
+      # Skip if tag already exists
+      if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
+        echo "Tag $NEW_TAG already exists, skipping"
+        exit 0
+      fi
+
       # Update package.json version
       sed -i "s/\"version\": \".*\"/\"version\": \"${MAJOR}.${MINOR}.${PATCH}\"/" package.json
       git add package.json
