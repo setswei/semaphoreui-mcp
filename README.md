@@ -15,7 +15,7 @@ A Model Context Protocol (MCP) server that gives AI assistants full access to [S
 ### 1. Pull the image
 
 ```bash
-docker pull gitlab.cybercrysis.net.au:5050/mcp/semaphoreui:latest
+docker pull setswei/semaphoreui-mcp:latest
 ```
 
 Or build locally:
@@ -34,7 +34,7 @@ Docs only (no Semaphore instance needed):
 {
   "mcpServers": {
     "semaphore-docs": {
-      "args": ["run", "-i", "--rm", "gitlab.cybercrysis.net.au:5050/mcp/semaphoreui:latest"],
+      "args": ["run", "-i", "--rm", "setswei/semaphoreui-mcp:latest"],
       "command": "docker"
     }
   }
@@ -51,7 +51,7 @@ Docs + API (full access to your Semaphore instance):
         "run", "-i", "--rm",
         "-e", "SEMAPHORE_URL",
         "-e", "SEMAPHORE_API_TOKEN",
-        "gitlab.cybercrysis.net.au:5050/mcp/semaphoreui:latest"
+        "setswei/semaphoreui-mcp:latest"
       ],
       "command": "docker",
       "env": {
@@ -172,7 +172,7 @@ For standalone or remote use:
 docker run -d -p 3001:3001 \
   -e SEMAPHORE_URL=http://semaphore:3000 \
   -e SEMAPHORE_API_TOKEN=your-token \
-  gitlab.cybercrysis.net.au:5050/mcp/semaphoreui:latest \
+  setswei/semaphoreui-mcp:latest \
   node dist/index.js --http
 ```
 

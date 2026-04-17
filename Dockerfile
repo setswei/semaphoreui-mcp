@@ -9,7 +9,9 @@ RUN npm run build
 FROM node:22-alpine
 LABEL org.opencontainers.image.title="Semaphore UI MCP Server" \
       org.opencontainers.image.description="MCP server for Semaphore UI documentation and API" \
-      org.opencontainers.image.source="https://gitlab.cybercrysis.net.au/mcp/semaphoreui"
+      org.opencontainers.image.source="https://github.com/setswei/semaphoreui-mcp" \
+      org.opencontainers.image.url="https://hub.docker.com/r/setswei/semaphoreui-mcp" \
+      org.opencontainers.image.licenses="MIT"
 RUN apk add --no-cache git
 WORKDIR /app
 COPY package.json ./

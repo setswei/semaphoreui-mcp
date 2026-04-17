@@ -1,3 +1,13 @@
+/**
+ * Simple leveled logger that writes to stderr.
+ *
+ * Stderr is used instead of stdout to avoid interfering with the MCP
+ * JSON-RPC protocol when running in stdio transport mode.
+ *
+ * Set the MCP_LOG_LEVEL environment variable to control verbosity:
+ *   debug | info (default) | warn | error
+ */
+
 const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 type Level = keyof typeof LEVELS;
 

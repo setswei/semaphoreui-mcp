@@ -1,3 +1,16 @@
+/**
+ * Semaphore UI MCP Server
+ *
+ * This is the main entry point for the MCP server. It:
+ *   1. Indexes Semaphore UI documentation from markdown files at startup
+ *   2. Registers 4 documentation search/read tools (always available)
+ *   3. Registers 40 API tools for managing Semaphore resources (when SEMAPHORE_API_TOKEN is set)
+ *   4. Starts either a stdio transport (default, for Kiro CLI / Claude Desktop)
+ *      or an HTTP transport (with --http flag, for standalone/remote use)
+ *
+ * See README.md for configuration and usage.
+ */
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
@@ -7,9 +20,11 @@ import { api, isConfigured } from "./api-client.js";
 import { indexDocs, scoreDocs, extractSnippet, type DocEntry } from "./docs.js";
 import { logger } from "./logger.js";
 
+// Path to cloned semaphore-docs markdown files (set in Dockerfile)
 const DOCS_DIR = process.env.DOCS_DIR || "/docs";
 const PORT = parseInt(process.env.PORT || "3001");
 
+// Index all documentation at startup (held in memory for fast search)
 let docs: DocEntry[] = [];
 try {
   docs = indexDocs(DOCS_DIR);
@@ -18,7 +33,10 @@ try {
   logger.error(`Failed to index docs: ${e}`);
 }
 
-// --- MCP Server factory ---
+/**
+ * Create a new MCP server instance with all tools registered.
+ * Called once per session (stdio) or once per HTTP session (Streamable HTTP).
+ */
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -470,8 +488,15 @@ function createServer(): McpServer {
   return server;
 }
 
-// --- Transport: stdio (default) or HTTP (--http flag) ---
-
+/**
+ * Transport selection.
+ *
+ * stdio (default): MCP client (Kiro CLI, Claude Desktop) launches the container
+ *   with `docker run -i` and communicates over stdin/stdout.
+ *
+ * HTTP (--http flag): Runs an Express server with Streamable HTTP transport
+ *   on /mcp endpoint. Used for standalone/remote deployments.
+ */
 async function main() {
   if (process.argv.includes("--http")) {
     const app = express();
