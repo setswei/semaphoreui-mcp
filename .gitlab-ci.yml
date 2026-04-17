@@ -86,7 +86,7 @@ build-latest:
     DOCKERHUB_IMAGE: setswei/semaphoreui-mcp
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_TOKEN
+    - echo "$DOCKERHUB_TOKEN" | docker login -u $DOCKERHUB_USERNAME --password-stdin
   script:
     - docker build
         -t $CI_REGISTRY_IMAGE:latest
@@ -108,7 +108,7 @@ build-release:
     DOCKERHUB_IMAGE: setswei/semaphoreui-mcp
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_TOKEN
+    - echo "$DOCKERHUB_TOKEN" | docker login -u $DOCKERHUB_USERNAME --password-stdin
   script:
     - VERSION=${CI_COMMIT_TAG#v}
     - MAJOR=$(echo $VERSION | cut -d. -f1)
