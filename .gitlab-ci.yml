@@ -75,7 +75,7 @@ auto-release:
       sed -i "s/\"version\": \".*\"/\"version\": \"${MAJOR}.${MINOR}.${PATCH}\"/" package.json
       git add package.json
       git commit -m "chore: release ${NEW_TAG} [skip ci]"
-      git tag "$NEW_TAG"
+      git tag -f "$NEW_TAG"
       git push origin HEAD:main --tags
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE !~ /\[skip ci\]/
