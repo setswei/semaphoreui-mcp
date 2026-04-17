@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { api, isConfigured } from "./api-client.js";
 import { indexDocs, scoreDocs, extractSnippet, type DocEntry } from "./docs.js";
+import { logger } from "./logger.js";
 
 const DOCS_DIR = process.env.DOCS_DIR || "/docs";
 const PORT = parseInt(process.env.PORT || "3001");
@@ -12,9 +13,9 @@ const PORT = parseInt(process.env.PORT || "3001");
 let docs: DocEntry[] = [];
 try {
   docs = indexDocs(DOCS_DIR);
-  console.error(`Indexed ${docs.length} docs from ${DOCS_DIR}`);
+  logger.info(`Indexed ${docs.length} docs from ${DOCS_DIR}`);
 } catch (e) {
-  console.error(`Failed to index docs: ${e}`);
+  logger.error(`Failed to index docs: ${e}`);
 }
 
 // --- MCP Server factory ---
@@ -212,9 +213,9 @@ function createServer(): McpServer {
       ({ project_id }) => call("GET", `/project/${project_id}/schedules`)
     );
 
-    console.error("API tools enabled (SEMAPHORE_API_TOKEN configured)");
+    logger.info("API tools enabled (SEMAPHORE_API_TOKEN configured)");
   } else {
-    console.error("API tools disabled (no SEMAPHORE_API_TOKEN)");
+    logger.info("API tools disabled (no SEMAPHORE_API_TOKEN)");
   }
 
   return server;
@@ -253,12 +254,12 @@ async function main() {
     app.get("/mcp", handleMcpRequest);
     app.delete("/mcp", (req, res) => { sessions.delete(req.headers["mcp-session-id"] as string); res.status(200).end(); });
     app.get("/health", (_req, res) => res.json({ status: "ok", docs: docs.length }));
-    app.listen(PORT, () => console.error(`MCP server (HTTP) on http://0.0.0.0:${PORT}/mcp`));
+    app.listen(PORT, () => logger.info(`MCP server (HTTP) on http://0.0.0.0:${PORT}/mcp`));
   } else {
     const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
     const transport = new StdioServerTransport();
     await createServer().connect(transport);
-    console.error("MCP server running on stdio");
+    logger.info("MCP server running on stdio");
   }
 }
 

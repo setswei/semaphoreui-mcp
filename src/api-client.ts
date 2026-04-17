@@ -1,3 +1,5 @@
+import { logger } from "./logger.js";
+
 export interface ApiConfig {
   url: string;
   token: string;
@@ -13,6 +15,7 @@ export function getConfig(): ApiConfig {
 export async function api(method: string, path: string, body?: unknown, config?: ApiConfig): Promise<unknown> {
   const { url: baseUrl, token } = config || getConfig();
   const url = `${baseUrl}/api${path}`;
+  logger.debug(`${method} ${url}`);
   let res: Response;
   try {
     res = await fetch(url, {
@@ -28,8 +31,10 @@ export async function api(method: string, path: string, body?: unknown, config?:
   }
   if (!res.ok) {
     const text = await res.text();
+    logger.error(`${method} ${path} → ${res.status}: ${text}`);
     throw new Error(`${method} ${path} → ${res.status}: ${text}`);
   }
+  logger.debug(`${method} ${path} → ${res.status}`);
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return res.json();
   return res.text();
