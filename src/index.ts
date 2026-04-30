@@ -114,7 +114,8 @@ function createServer(): McpServer {
     async function call(method: string, path: string, body?: unknown) {
       try {
         const data = await api(method, path, body);
-        return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+        const text = data !== null ? JSON.stringify(data, null, 2) : `${method} ${path} succeeded`;
+        return { content: [{ type: "text" as const, text }] };
       } catch (e: any) {
         return { content: [{ type: "text" as const, text: `Error: ${e.message}` }], isError: true };
       }
@@ -166,6 +167,13 @@ function createServer(): McpServer {
       arguments: z.string().default("[]").describe("Extra CLI arguments as JSON array"),
       description: z.string().optional().describe("Template description"),
       allow_override_args_in_task: z.boolean().default(false).describe("Allow arg override when running"),
+      task_params: z.object({
+        auto_approve: z.boolean().optional().describe("Auto-approve Terraform apply"),
+        allow_auto_approve: z.boolean().optional().describe("Allow auto-approve override when running"),
+        allow_destroy: z.boolean().optional().describe("Allow Terraform destroy"),
+        override_backend: z.boolean().optional().describe("Override backend config"),
+        backend_filename: z.string().optional().describe("Backend config filename"),
+      }).optional().describe("App-specific template params (Terraform)"),
     }, ({ project_id, ...body }) => call("POST", `/project/${project_id}/templates`, { project_id, ...body }));
 
     server.tool("semaphoreui_api_update_template", "Update a task template.", {
@@ -179,6 +187,13 @@ function createServer(): McpServer {
       app: z.string().default("ansible").describe("App type"),
       arguments: z.string().default("[]").describe("Extra CLI arguments as JSON array"),
       description: z.string().optional().describe("Template description"),
+      task_params: z.object({
+        auto_approve: z.boolean().optional().describe("Auto-approve Terraform apply"),
+        allow_auto_approve: z.boolean().optional().describe("Allow auto-approve override when running"),
+        allow_destroy: z.boolean().optional().describe("Allow Terraform destroy"),
+        override_backend: z.boolean().optional().describe("Override backend config"),
+        backend_filename: z.string().optional().describe("Backend config filename"),
+      }).optional().describe("App-specific template params (Terraform)"),
     }, ({ project_id, template_id, ...body }) => call("PUT", `/project/${project_id}/templates/${template_id}`, { id: template_id, project_id, ...body }));
 
     server.tool("semaphoreui_api_delete_template", "Delete a task template.", {
@@ -200,8 +215,23 @@ function createServer(): McpServer {
         limit: z.string().optional().describe("Limit to specific hosts"),
         git_branch: z.string().optional().describe("Override git branch"),
         message: z.string().optional().describe("Task message/description"),
+        params: z.object({
+          plan: z.boolean().optional().describe("Terraform plan only"),
+          destroy: z.boolean().optional().describe("Terraform destroy"),
+          auto_approve: z.boolean().optional().describe("Terraform auto-approve"),
+          upgrade: z.boolean().optional().describe("Terraform upgrade providers"),
+          reconfigure: z.boolean().optional().describe("Terraform reconfigure backend"),
+          debug: z.boolean().optional().describe("Ansible debug mode"),
+          dry_run: z.boolean().optional().describe("Ansible check mode"),
+          diff: z.boolean().optional().describe("Ansible show diff"),
+          limit: z.array(z.string()).optional().describe("Ansible host limit"),
+        }).optional().describe("Task params — use for Terraform tasks or advanced Ansible overrides"),
       },
-      ({ project_id, ...params }) => call("POST", `/project/${project_id}/tasks`, params)
+      ({ project_id, debug, dry_run, diff, limit, params: explicitParams, ...rest }) => {
+        // Build params: explicit params object takes priority, otherwise construct from top-level Ansible fields
+        const params = explicitParams || { debug, dry_run, diff, ...(limit ? { limit: [limit] } : {}) };
+        return call("POST", `/project/${project_id}/tasks`, { ...rest, params });
+      }
     );
 
     server.tool(

@@ -59,9 +59,11 @@ export async function api(method: string, path: string, body?: unknown, config?:
     throw new Error(`${method} ${path} → ${res.status}: ${text}`);
   }
   logger.debug(`${method} ${path} → ${res.status}`);
+  const text = await res.text();
+  if (!text) return null;
   const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return res.json();
-  return res.text();
+  if (ct.includes("application/json")) return JSON.parse(text);
+  return text;
 }
 
 /** Check if the API token is configured (determines whether API tools are registered). */

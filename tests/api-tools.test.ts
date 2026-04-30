@@ -329,4 +329,22 @@ describe("API tools", () => {
     expect(active).toHaveLength(2);
     expect(active.map(t => t.id)).toEqual([10, 11]);
   });
+
+  // --- Terraform / task_params ---
+  it("create_template with task_params passes through", async () => {
+    const taskParams = { auto_approve: true, allow_auto_approve: true };
+    mockApi.mockResolvedValue({ id: 20, name: "TF Deploy", task_params: taskParams });
+    const result = await api("POST", "/project/1/templates", {
+      name: "TF Deploy", playbook: ".", project_id: 1, inventory_id: 1, repository_id: 1, environment_id: 1, app: "terraform", task_params: taskParams,
+    });
+    expect(mockApi).toHaveBeenCalledWith("POST", "/project/1/templates", expect.objectContaining({ task_params: taskParams }));
+    expect(result).toHaveProperty("task_params");
+  });
+
+  it("run_task with terraform params sends params object", async () => {
+    const params = { plan: false, destroy: false, auto_approve: true };
+    mockApi.mockResolvedValue({ id: 1200, status: "waiting" });
+    await api("POST", "/project/1/tasks", { template_id: 143, params });
+    expect(mockApi).toHaveBeenCalledWith("POST", "/project/1/tasks", { template_id: 143, params });
+  });
 });

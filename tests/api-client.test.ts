@@ -4,12 +4,12 @@ import { api, isConfigured, getConfig } from "../src/api-client.js";
 const cfg = { url: "http://semaphore.test", token: "test-token" };
 
 function mockFetch(body: unknown, status = 200, contentType = "application/json") {
+  const textBody = typeof body === "string" ? body : (body === null || body === undefined) ? "" : JSON.stringify(body);
   return vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
     headers: { get: (h: string) => (h === "content-type" ? contentType : null) },
-    json: () => Promise.resolve(body),
-    text: () => Promise.resolve(typeof body === "string" ? body : JSON.stringify(body)),
+    text: () => Promise.resolve(textBody),
   });
 }
 
@@ -49,6 +49,18 @@ describe("api()", () => {
   it("throws on network failure with URL", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
     await expect(api("GET", "/projects", undefined, cfg)).rejects.toThrow("Failed to connect to http://semaphore.test: ECONNREFUSED");
+  });
+
+  it("returns null for empty JSON response body (PUT/DELETE)", async () => {
+    vi.stubGlobal("fetch", mockFetch(null, 200, "application/json"));
+    const result = await api("DELETE", "/project/1/templates/5", undefined, cfg);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty body on successful PUT", async () => {
+    vi.stubGlobal("fetch", mockFetch(null, 200, "application/json"));
+    const result = await api("PUT", "/project/1/environment/3", { name: "test" }, cfg);
+    expect(result).toBeNull();
   });
 });
 
